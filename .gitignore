@@ -1,0 +1,24 @@
+# Claude Code
+.claude/
+
+# Dependências
+node_modules/
+
+# Build
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Ambiente
+.env.local
+.env.production.local
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Docker volumes (dados gerados em runtime)
+postgres_data/

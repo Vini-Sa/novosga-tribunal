@@ -1,0 +1,47 @@
+version: '3'
+services:
+
+  novosga:
+    image: novosga/novosga:2.0
+    restart: always
+    depends_on:
+      - mysqldb
+    ports:
+      - "80:80"
+      - "2020:2020"
+    environment:
+      APP_ENV: 'prod'
+      DATABASE_URL: 'mysql://novosga:SenhaForte123!@mysqldb:3306/novosga2?charset=utf8mb4&serverVersion=5.7'
+      NOVOSGA_ADMIN_USERNAME: 'admin'
+      NOVOSGA_ADMIN_PASSWORD: 'admin123'
+      NOVOSGA_ADMIN_FIRSTNAME: 'Administrador'
+      NOVOSGA_ADMIN_LASTNAME: 'Global'
+      NOVOSGA_UNITY_NAME: 'Unidade 01'
+      NOVOSGA_UNITY_CODE: 'U01'
+      NOVOSGA_NOPRIORITY_NAME: 'Normal'
+      NOVOSGA_NOPRIORITY_DESCRIPTION: 'Atendimento normal'
+      NOVOSGA_PRIORITY_NAME: 'Prioridade'
+      NOVOSGA_PRIORITY_DESCRIPTION: 'Atendimento prioritário'
+      NOVOSGA_PLACE_NAME: 'Guichê'
+      TZ: 'America/Sao_Paulo'
+      LANGUAGE: 'pt_BR'
+
+  triagem:
+    build: C:\novosga\triage-app-2.1.0
+    restart: always
+    ports:
+      - "8080:80"
+
+  mysqldb:
+    image: mysql:5.7
+    restart: always
+    environment:
+      MYSQL_USER: 'novosga'
+      MYSQL_PASSWORD: 'SenhaForte123!'
+      MYSQL_DATABASE: 'novosga2'
+      MYSQL_ROOT_PASSWORD: 'RootSenha123!'
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:

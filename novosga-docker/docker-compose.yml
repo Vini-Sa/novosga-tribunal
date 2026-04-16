@@ -1,0 +1,57 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: novosga
+      POSTGRES_USER: novosga
+      POSTGRES_PASSWORD: novosga@tribunal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novosga"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mercure:
+    image: dunglas/mercure
+    environment:
+      SERVER_NAME: ':3000'
+      MERCURE_PUBLISHER_JWT_KEY: 'novosga_mercure_secret_tribunal_2026'
+      MERCURE_SUBSCRIBER_JWT_KEY: 'novosga_mercure_secret_tribunal_2026'
+      MERCURE_EXTRA_DIRECTIVES: |
+        cors_origins *
+        anonymous
+    ports:
+      - "3000:3000"
+
+  novosga:
+    build: ./novosga-2.3-standalone
+    ports:
+      - "8000:8080"
+    environment:
+      DATABASE_URL: "postgresql://novosga:novosga@tribunal@postgres:5432/novosga?serverVersion=16"
+      MERCURE_URL: "http://mercure:3000/.well-known/mercure"
+      MERCURE_PUBLIC_URL: "http://localhost:3000/.well-known/mercure"
+      MERCURE_JWT_SECRET: "novosga_mercure_secret_tribunal_2026"
+      NOVOSGA_ADMIN_USERNAME: admin
+      NOVOSGA_ADMIN_PASSWORD: "admin@tribunal"
+      NOVOSGA_ADMIN_FIRSTNAME: Administrador
+      NOVOSGA_ADMIN_LASTNAME: Global
+      NOVOSGA_UNITY_NAME: "Unidade 1"
+      NOVOSGA_UNITY_CODE: U01
+      NOVOSGA_NOPRIORITY_NAME: Normal
+      NOVOSGA_NOPRIORITY_DESCRIPTION: "Atendimento normal"
+      NOVOSGA_PRIORITY_NAME: "Prioritário"
+      NOVOSGA_PRIORITY_DESCRIPTION: "Atendimento prioritário"
+      NOVOSGA_PLACE_NAME: "Guichê"
+      TZ: America/Sao_Paulo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mercure:
+        condition: service_started
+
+volumes:
+  postgres_data:
