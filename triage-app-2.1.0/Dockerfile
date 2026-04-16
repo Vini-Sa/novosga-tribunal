@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install --legacy-peer-deps --ignore-scripts
+RUN npm config set strict-ssl false && npm ci --legacy-peer-deps
 
 COPY . .
 

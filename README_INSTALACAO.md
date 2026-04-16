@@ -1,6 +1,6 @@
 # Sistema de Triagem NovoSGA — Documentação de Instalação
-**Versão do documento:** 1.0  
-**Data:** 15/04/2026  
+**Versão do documento:** 1.1  
+**Data:** 16/04/2026  
 **Finalidade:** Instalação e configuração do sistema de triagem NovoSGA em ambiente de produção via Docker.
 
 ---
@@ -84,7 +84,7 @@ cd novosga-docker
 
 ### 1.2 Arquivo `docker-compose.yml` (criado do zero)
 
-O repositório original não inclui um `docker-compose.yml` pronto para v2.3 com PostgreSQL. O arquivo abaixo deve ser criado na raiz do repositório clonado:
+O repositório original inclui um `docker-compose.yml` para **v2.0 com MySQL**, que não é compatível com a v2.3. Esse arquivo deve ser **substituído** pelo abaixo na raiz do repositório clonado:
 
 ```yaml
 services:
@@ -160,7 +160,19 @@ RUN sed -i 's/\r$//' /usr/local/bin/start.sh /usr/local/bin/consumer.sh && \
 
 > **Nota:** Em servidores Linux onde o git não converte finais de linha, esta linha é inofensiva — o `sed` simplesmente não encontra `\r` para remover.
 
-### 1.4 Subir o sistema
+### 1.4 Ajuste obrigatório antes de subir em produção
+
+No arquivo `novosga-docker/docker-compose.yml`, alterar a variável:
+
+```yaml
+MERCURE_PUBLIC_URL: "http://[IP-ou-domínio-do-servidor]:3000/.well-known/mercure"
+```
+
+> Essa é a única variável que precisa ser editada diretamente no arquivo. Sem essa alteração, o painel de atendimento não atualiza em tempo real.
+
+### 1.5 Subir o sistema
+
+O `docker-compose.yml` orquestra todos os serviços de uma vez: PostgreSQL, Mercure, NovoSGA e Triage App.
 
 ```bash
 cd novosga-docker
@@ -168,14 +180,18 @@ docker compose up -d
 ```
 
 Na primeira execução, o sistema:
-1. Baixa as imagens do Docker Hub
-2. Aguarda o PostgreSQL ficar pronto
+1. Baixa as imagens do Docker Hub e faz o build do NovoSGA e do Triage App
+2. Aguarda o PostgreSQL ficar pronto (healthcheck)
 3. Executa `bin/console novosga:install` para criar o schema do banco e o usuário admin
-4. Inicia nginx + php-fpm + cron + messenger
+4. Inicia todos os serviços
 
-Tempo estimado de primeira inicialização: **30 a 60 segundos**.
+Tempo estimado de primeira inicialização: **2 a 5 minutos** (build das imagens incluso).
 
-### 1.5 Configuração inicial no painel admin
+> **Warnings normais do Mercure:** nos logs do Mercure aparecem dois avisos sobre HTTP/2 e HTTP/3 exigirem TLS. Eles são **inofensivos** em ambientes HTTP — o Mercure funciona normalmente via HTTP/1.1. Para suprimi-los em produção, configure HTTPS (nginx reverse proxy com certificado).
+
+> **Warnings normais do Mercure:** nos logs do Mercure aparecem dois avisos sobre HTTP/2 e HTTP/3 exigirem TLS. Eles são **inofensivos** em ambientes HTTP — o Mercure funciona normalmente via HTTP/1.1. Para suprimi-los em produção, configure HTTPS (nginx reverse proxy com certificado).
+
+### 1.6 Configuração inicial no painel admin
 
 Acessar `http://[servidor]:8000` com as credenciais definidas em `NOVOSGA_ADMIN_USERNAME` e `NOVOSGA_ADMIN_PASSWORD`.
 
@@ -185,7 +201,7 @@ Acessar `http://[servidor]:8000` com as credenciais definidas em `NOVOSGA_ADMIN_
 2. **Cadastros → Perfis:** criar perfil de atendente
 3. **Cadastros → Unidades:** verificar se a unidade foi criada automaticamente
 4. **Integrações → Web API:** clicar em **+ Adicionar** para criar um cliente OAuth2
-   - Anotar o **Client ID** e **Client Secret** gerados — serão usados na configuração do triage-app
+   - Anotar o **Client ID** e **Client Secret** gerados — serão usados na configuração do triage-app (Parte 2)
 5. **Dados:** criar um atendente vinculado ao perfil e à unidade
 
 ---
@@ -245,19 +261,39 @@ A opção `?indentedSyntax` era a forma antiga (sass-loader v7) de passar config
 ---
 
 #### Alteração 3 — `package.json`
-**Problema:** `node-sass` v4 estava declarado como dependência e seria instalado no Docker, onde também falharia.
+**Problema:** `node-sass` v4 estava declarado como dependência e seria instalado no Docker, onde também falharia. Além disso, o script `postinstall` rodava o linter automaticamente após `npm install`, o que falha sem um ambiente completamente configurado.
 
 **Correção:**
 ```diff
 - "node-sass": "^4.9.2",
-+ "sass": "^1.99.0",        ← Dart Sass (substituto oficial, sem binários nativos)
-+ "sass-loader": "^10.5.2", ← compatível com webpack 4 + Dart Sass
++ "sass": "^1.99.0",               ← Dart Sass (substituto oficial, sem binários nativos)
++ "sass-loader": "^10.5.2",        ← compatível com webpack 4 + Dart Sass
+
+- "postinstall": "npm run lint:fix"
++ "postinstall:disabled": "npm run lint:fix"   ← renomeado para desativar o hook automático
 ```
+
+> Renomear para `postinstall:disabled` é preferível a deletar: o npm não reconhece o nome como lifecycle hook e não o executa, mas o script permanece acessível via `npm run postinstall:disabled` se necessário.
 
 ---
 
-#### Alteração 4 — `Dockerfile`
-**Problema:** O Dockerfile original usava `node:8` (suporte encerrado em 2019) e o `npm install` tentava compilar o `node-sass` e executar o linter no `postinstall`, ambos falhando no ambiente atual.
+#### Alteração 4 — `package-lock.json` (regenerar localmente)
+**Problema:** O `package-lock.json` original foi gerado com `node-sass` e ficou desatualizado após a troca para `sass`. Com o lockfile desatualizado, `npm install` dentro do Docker precisava re-resolver todas as dependências do zero — um processo pesado que falha silenciosamente em ambientes com proxy SSL corporativo.
+
+**Passo obrigatório — executar uma vez na máquina de desenvolvimento (antes do build Docker):**
+```bash
+cd triage-app-2.1.0
+npm install --legacy-peer-deps
+```
+
+Isso regenera o `package-lock.json` consistente com o `package.json` atual. O `npm ci` no Docker usará esse lockfile e instalará os pacotes sem re-resolver dependências.
+
+> O `node_modules/` gerado localmente é ignorado pelo Docker via `.dockerignore`.
+
+---
+
+#### Alteração 5 — `Dockerfile`
+**Problema:** O Dockerfile original usava `node:8` (suporte encerrado em 2019). Além disso, em ambientes com **proxy corporativo com inspeção SSL** (certificado auto-assinado), o npm no container Alpine falha silenciosamente com `Exit handler never called!` ao tentar baixar pacotes — a conexão HTTPS ao registry é interceptada e o certificado da CA corporativa não está no store do Alpine.
 
 **Correção:**
 ```diff
@@ -269,7 +305,7 @@ A opção `?indentedSyntax` era a forma antiga (sass-loader v7) de passar config
 
 - RUN npm install && \
 -     npm run build:web
-+ RUN npm install --legacy-peer-deps --ignore-scripts
++ RUN npm config set strict-ssl false && npm ci --legacy-peer-deps
   COPY . .
 + RUN NODE_OPTIONS=--openssl-legacy-provider npm run build:web
 
@@ -279,16 +315,19 @@ A opção `?indentedSyntax` era a forma antiga (sass-loader v7) de passar config
   CMD ["nginx", "-g", "daemon off;"]
 ```
 
-| Flag | Motivo |
+| Flag / Comando | Motivo |
 |---|---|
 | `node:18-alpine` | Node.js 18 LTS; Alpine reduz tamanho da imagem de build |
+| `npm config set strict-ssl false` | Ambiente com proxy SSL corporativo — o container Alpine não tem o certificado da CA interna |
+| `npm ci` | Usa o `package-lock.json` diretamente, sem re-resolver dependências — mais rápido e confiável que `npm install` |
 | `--legacy-peer-deps` | Pacotes de 2018 têm conflitos de peerDeps no npm moderno |
-| `--ignore-scripts` | Impede o `postinstall` de rodar o linter (falha sem ambiente configurado) |
 | `NODE_OPTIONS=--openssl-legacy-provider` | webpack 4 usa algoritmo MD4 removido no OpenSSL 3 (Node.js 17+) |
+
+> **Aviso de segurança:** `strict-ssl false` desabilita a verificação do certificado SSL apenas dentro do container de *build* (não afeta o nginx de produção). Em redes sem proxy corporativo, esta linha pode ser removida.
 
 ---
 
-#### Alteração 5 — `src/renderer/pages/Settings.vue`
+#### Alteração 6 — `src/renderer/pages/Settings.vue`
 **Problema:** Após salvar as configurações e confirmar o diálogo de sucesso, o app permanecia na tela de configurações sem navegar para a tela principal. No Electron original, a navegação era controlada pelo processo principal via IPC — inexistente no contexto web.
 
 **Correção:**
@@ -303,11 +342,7 @@ A opção `?indentedSyntax` era a forma antiga (sass-loader v7) de passar config
 
 ### 2.3 Build e execução
 
-```bash
-cd triage-app-2.1.0
-docker build -t triage-app .
-docker run -d -p 8080:80 --name triage-app triage-app
-```
+O Triage App está incluído no `docker-compose.yml` do NovoSGA. O comando `docker compose up -d` (seção 1.5) já sobe o triage-app junto com os demais serviços — não é necessário nenhum comando separado.
 
 ### 2.4 Configuração inicial do triage-app
 
@@ -319,8 +354,8 @@ Preencher os campos:
 | **Servidor** | `http://[servidor]:8000` |
 | **Usuário** | usuário cadastrado no NovoSGA (atendente ou admin) |
 | **Senha** | senha do usuário |
-| **Client ID** | gerado na etapa 1.5 (Web API do NovoSGA) |
-| **Client Secret** | gerado na etapa 1.5 (Web API do NovoSGA) |
+| **Client ID** | gerado na etapa 1.6 (Web API do NovoSGA) |
+| **Client Secret** | gerado na etapa 1.6 (Web API do NovoSGA) |
 
 Após salvar o servidor, ir para a aba **Serviços**, selecionar a unidade e habilitar os serviços desejados. Salvar novamente — o app navega para a tela de triagem.
 
@@ -330,40 +365,35 @@ Após salvar o servidor, ir para a aba **Serviços**, selecionar a unidade e hab
 
 ### Iniciar tudo
 ```bash
-# NovoSGA (sistema principal)
 cd novosga-docker
 docker compose up -d
-
-# Triage App (totem)
-docker run -d -p 8080:80 --name triage-app triage-app
 ```
 
 ### Parar tudo
 ```bash
 cd novosga-docker
 docker compose down
-
-docker stop triage-app
 ```
 
 ### Ver logs
 ```bash
+cd novosga-docker
+
 # Logs do NovoSGA
-docker compose -f novosga-docker/docker-compose.yml logs -f novosga
+docker compose logs -f novosga
 
 # Logs do Mercure
-docker compose -f novosga-docker/docker-compose.yml logs -f mercure
+docker compose logs -f mercure
 
 # Logs do triage-app
-docker logs -f triage-app
+docker compose logs -f triagem
 ```
 
-### Atualizar o triage-app após mudanças
+### Atualizar o triage-app após mudanças no código
 ```bash
-cd triage-app-2.1.0
-docker build -t triage-app .
-docker rm -f triage-app
-docker run -d -p 8080:80 --name triage-app triage-app
+cd novosga-docker
+docker compose build triagem
+docker compose up -d triagem
 ```
 
 ---

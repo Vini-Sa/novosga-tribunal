@@ -33,7 +33,7 @@ services:
     environment:
       DATABASE_URL: "postgresql://novosga:novosga@tribunal@postgres:5432/novosga?serverVersion=16"
       MERCURE_URL: "http://mercure:3000/.well-known/mercure"
-      MERCURE_PUBLIC_URL: "http://localhost:3000/.well-known/mercure"
+      MERCURE_PUBLIC_URL: "http://localhost:3000/.well-known/mercure"   # ← trocar localhost pelo IP/domínio do servidor
       MERCURE_JWT_SECRET: "novosga_mercure_secret_tribunal_2026"
       NOVOSGA_ADMIN_USERNAME: admin
       NOVOSGA_ADMIN_PASSWORD: "admin@tribunal"
@@ -52,6 +52,13 @@ services:
         condition: service_healthy
       mercure:
         condition: service_started
+
+  triagem:
+    build: ../triage-app-2.1.0
+    ports:
+      - "8080:80"
+    depends_on:
+      - novosga
 
 volumes:
   postgres_data:
