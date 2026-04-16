@@ -359,6 +359,35 @@ Preencher os campos:
 
 Após salvar o servidor, ir para a aba **Serviços**, selecionar a unidade e habilitar os serviços desejados. Salvar novamente — o app navega para a tela de triagem.
 
+### 2.5 Abrir o totem em modo kiosk (impressão automática)
+
+O browser sempre exibe o diálogo de impressão ao chamar `window.print()`. Para suprimir esse diálogo no totem, o Chrome deve ser aberto com a flag `--kiosk-printing`.
+
+**Windows:**
+```
+chrome --kiosk --kiosk-printing http://[servidor]:8080
+```
+
+**Linux:**
+```bash
+google-chrome --kiosk --kiosk-printing http://[servidor]:8080
+```
+
+| Flag | Efeito |
+|---|---|
+| `--kiosk` | Tela cheia sem barra de endereço nem menus |
+| `--kiosk-printing` | Aceita o diálogo de impressão automaticamente sem exibir ao usuário |
+
+> Para sair do modo kiosk: `Alt + F4` (Windows) ou `Ctrl + W` (Linux).
+
+**Autostart no Linux (totem físico):**
+```ini
+# /etc/xdg/autostart/totem.desktop
+[Desktop Entry]
+Type=Application
+Exec=google-chrome --kiosk --kiosk-printing http://[servidor]:8080
+```
+
 ---
 
 ## Parte 3 — Comandos de Operação
